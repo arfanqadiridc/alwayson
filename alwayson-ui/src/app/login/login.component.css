@@ -1,0 +1,64 @@
+.login-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: #00a884; /* WhatsApp classic green header bleed */
+}
+
+.login-card {
+  background: white;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.logo-box h2 {
+  margin: 0;
+  color: #111b21;
+}
+
+.logo-box p {
+  color: #667781;
+  font-size: 14px;
+  margin-bottom: 30px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 20px;
+  border: 1px solid #d1d7db;
+  border-radius: 6px;
+  font-size: 16px;
+  outline: none;
+}
+
+.form-group input:focus {
+  border-color: #00a884;
+}
+
+.btn-login {
+  background: #00a884;
+  color: white;
+  border: none;
+  font-size: 16px;
+  font-weight: 600;
+  width: 100%;
+  padding: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-login:hover {
+  background: #008f6f;
+}
+
+.error-msg {
+  color: #ea0038;
+  margin-top: 15px;
+  font-size: 14px;
+}

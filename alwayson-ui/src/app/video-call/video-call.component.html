@@ -1,0 +1,24 @@
+<div class="video-call-container" *ngIf="activeCall">
+  <div class="video-grid">
+    <div class="video-wrapper local">
+      <video #localVideo autoplay playsinline muted></video>
+      <div class="label">You</div>
+    </div>
+    <div class="video-wrapper remote" *ngFor="let peer of peers">
+      <video [id]="peer.id" autoplay playsinline></video>
+      <div class="label">{{ peer.username }}</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button (click)="toggleAudio()" [class.off]="!audioEnabled">
+      <i class="icon-mic"></i>
+    </button>
+    <button (click)="toggleVideo()" [class.off]="!videoEnabled">
+      <i class="icon-video"></i>
+    </button>
+    <button (click)="endCall()" class="end-call">
+      <i class="icon-call-end"></i>
+    </button>
+  </div>
+</div>

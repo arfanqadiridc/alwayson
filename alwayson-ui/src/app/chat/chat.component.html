@@ -1,0 +1,130 @@
+<div class="whatsapp-container">
+
+  <!-- Toast Notification Engine -->
+  <div class="toast-container">
+    <div class="toast" *ngFor="let toast of toasts">
+      <strong>{{ toast.room }}</strong>
+      <p>{{ toast.sender }}: {{ toast.msg }}</p>
+    </div>
+  </div>
+
+  <!-- ===== LEFT SIDEBAR ===== -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="user-avatar">{{ currentUser.charAt(0) | uppercase }}</div>
+      <span class="current-user-name">{{ currentUser }}</span>
+      <div class="header-btns">
+        <button (click)="createGroup()" class="icon-btn" title="New Group">⊕</button>
+        <button (click)="logout()" class="icon-btn" title="Logout">⎋</button>
+      </div>
+    </div>
+
+    <!-- Tab Switcher -->
+    <div class="tab-bar">
+      <button [class.active-tab]="activeTab === 'groups'" (click)="activeTab = 'groups'">Groups</button>
+      <button [class.active-tab]="activeTab === 'dms'" (click)="activeTab = 'dms'">Direct Messages</button>
+    </div>
+
+    <div class="search-bar">
+      <input type="text" placeholder="Search...">
+    </div>
+
+    <!-- Group Rooms Tab -->
+    <div class="chat-list" *ngIf="activeTab === 'groups'">
+      <div
+        class="chat-obj"
+        *ngFor="let room of rooms"
+        [class.active]="activeRoom === room"
+        (click)="openGroupRoom(room)">
+        <div class="chat-avatar room-icon">#</div>
+        <div class="chat-info">
+          <h4>{{ room }}</h4>
+          <p *ngIf="activeRoom === room && whoIsTyping" class="typing-text">{{ whoIsTyping }}</p>
+          <p *ngIf="activeRoom !== room || !whoIsTyping">Group conversation</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Direct Messages Tab -->
+    <div class="chat-list" *ngIf="activeTab === 'dms'">
+      <div class="empty-state" *ngIf="allUsers.length === 0">
+        <p>No other users found.</p>
+      </div>
+      <div
+        class="chat-item"
+        *ngFor="let user of allUsers"
+        [class.active]="activeRoomLabel === user.username && isDmRoom"
+        (click)="openDmRoom(user.username)">
+        <div class="chat-avatar">{{ user.name.charAt(0) | uppercase }}</div>
+        <div class="chat-info">
+          <div class="chat-name">{{ user.name }}</div>
+          <div class="chat-last-msg">Click to chat</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MAIN CHAT AREA ===== -->
+  <div class="main-chat">
+    <!-- Header -->
+    <div class="chat-header">
+      <div class="chat-avatar" [class.dm-avatar]="isDmRoom" [class.room-icon]="!isDmRoom">
+        {{ isDmRoom ? activeRoomLabel.charAt(0) : '#' }}
+      </div>
+      <div class="chat-header-info">
+        <h3>{{ activeRoomLabel || 'Select a conversation' }}</h3>
+        <p *ngIf="whoIsTyping" class="typing-text">{{ whoIsTyping }}</p>
+        <p *ngIf="!whoIsTyping">{{ isDmRoom ? 'Direct message' : 'Group channel' }}</p>
+      </div>
+      <div class="header-actions" *ngIf="activeRoom">
+        <button class="icon-btn" (click)="videoCall.startCall(activeRoom)" title="Start Video Call">📹</button>
+        <button class="icon-btn" (click)="videoCall.startCall(activeRoom)" title="Start Audio Call">📞</button>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div class="chat-history">
+      <div *ngIf="chatHistory.length === 0" class="no-messages">
+        <p>No messages yet. Say hello! 👋</p>
+      </div>
+
+      <div
+        *ngFor="let msg of chatHistory"
+        class="message-wrapper"
+        [ngClass]="{ self: msg.isSelf, other: !msg.isSelf, system: msg.sender === 'System' }">
+
+        <div class="bubble">
+          <span class="sender-name" *ngIf="!msg.isSelf && msg.sender !== 'System'">{{ msg.sender }}</span>
+          <span class="text">{{ msg.text }}</span>
+
+          <!-- Read Receipt Ticks (outgoing only) -->
+          <div class="msg-meta" *ngIf="msg.isSelf">
+            <span class="tick pending" *ngIf="msg.status === -1" title="Pending">○</span>
+            <span class="tick single"  *ngIf="msg.status === 0"  title="Sent">✓</span>
+            <span class="tick double"  *ngIf="msg.status === 1"  title="Delivered">✓✓</span>
+            <span class="tick read"    *ngIf="msg.status === 2"  title="Read">✓✓</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="chat-input-area" *ngIf="activeRoom">
+      <input
+        type="text"
+        placeholder="Type a message…"
+        [(ngModel)]="messageText"
+        (keyup)="onType()"
+        (keyup.enter)="sendMessage()" />
+      <button class="send-btn" (click)="sendMessage()">➤</button>
+    </div>
+
+    <!-- Placeholder when nothing is open -->
+    <div class="no-chat-selected" *ngIf="!activeRoom">
+      <div class="placeholder-icon">💬</div>
+      <h2>AlwaysOn Messenger</h2>
+      <p>Select a group or user to start chatting.</p>
+    </div>
+  </div>
+  <app-video-call></app-video-call>
+</div>
