@@ -1,0 +1,42 @@
+server:
+  port: 8080
+  error:
+    include-message: always   # In production, turn to 'never' to prevent info leak
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
+
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  datasource:
+    # MySQL Database Connection Details
+    url: jdbc:mysql://localhost:3306/alwayson_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: ENC(p8YIi4BOwzEynUgYSJpJYg==)
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    type: com.zaxxer.hikari.HikariDataSource
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+
+socketio:
+  server:
+    host: 0.0.0.0
+    port: 8085 # Running Socket.IO on a separate port from standard HTTP traffic
+
+app:
+  jwt:
+    # VERY IMPORTANT: Generate a secure random 256-bit+ key for production
+    # This is a temporary base64 encoded strong key for development setup
+    secret: MzRkZjU2YjdkYzU0ZmU0ZDExZGQzMjNjOTA4NzhiYTc4YzYzOWI2OGRlNDNjZmFkN2I4OWJhMTc4NTM1NmFkNw==
+    expiration-ms: 86400000 # 24 Hours
+    
+  security:
+    # Hacking Proof Configurations
+    cors:
+      allowed-origins: "*" # Set exactly to your frontend protocol+domain for hacking proof prod
+      allowed-methods: "GET,POST,PUT,DELETE,OPTIONS"

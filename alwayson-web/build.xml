@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="AlwaysOn_Web" default="default" basedir=".">
+    <description>Builds, tests, and runs the project AlwaysOn_Web.</description>
+    <import file="nbproject/build-impl.xml"/>
+</project>

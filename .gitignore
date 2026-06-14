@@ -19,8 +19,8 @@ target/
 *.ipr
 
 ### NetBeans ###
-/nbproject/private/
-/nbbuild/
+# /nbproject/private/
+# /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
@@ -32,4 +32,4 @@ build/
 .vscode/
 
 ### Custom Offline libs
-lib-offline/
+# lib-offline/

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="AlwaysOn_Offline" default="default" basedir=".">
+    <description>Builds, tests, and runs the project AlwaysOn_Offline.</description>
+    <import file="nbproject/build-impl.xml"/>
+
+    <target name="war" depends="compile">
+        <mkdir dir="dist"/>
+        <war destfile="dist/alwayson-api.war" webxml="WEB-INF/web.xml" update="true">
+            <classes dir="build/classes"/>
+            <classes dir="resources"/>
+            <lib dir="lib"/>
+        </war>
+        <echo message="WAR file created at dist/alwayson-api.war"/>
+    </target>
+</project>

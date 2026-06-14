@@ -30,7 +30,7 @@ type SidebarTab = 'groups' | 'dms';
 })
 export class ChatComponent implements OnInit, OnDestroy {
   @ViewChild(VideoCallComponent) videoCall!: VideoCallComponent;
-  readonly API = 'http://localhost:8080';
+  readonly API = 'http://localhost:8080/alwayson-api';
 
   activeTab: SidebarTab = 'groups';
   rooms: string[] = [];
