@@ -13,7 +13,7 @@ spring:
     # MySQL Database Connection Details
     url: jdbc:mysql://localhost:3306/alwayson_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: root
-    password: ENC(p8YIi4BOwzEynUgYSJpJYg==)
+    password: abc123 #ENC(25P18X6cQ4y/WJ51rD+k7A==) # password: abc123
     driver-class-name: com.mysql.cj.jdbc.Driver
     type: com.zaxxer.hikari.HikariDataSource
     hikari:

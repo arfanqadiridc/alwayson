@@ -27,7 +27,7 @@ export class LoginComponent {
   async onLogin() {
     try {
       const response: any = await firstValueFrom(
-        this.http.post('http://localhost:8080/alwayson-api/api/auth/login', {
+        this.http.post('http://localhost:8080/api/auth/login', {
           username: this.username,
           password: this.password
         })

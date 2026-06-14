@@ -30,7 +30,7 @@ type SidebarTab = 'groups' | 'dms';
 })
 export class ChatComponent implements OnInit, OnDestroy {
   @ViewChild(VideoCallComponent) videoCall!: VideoCallComponent;
-  readonly API = 'http://localhost:8080/alwayson-api';
+  readonly API = 'http://localhost:8080';
 
   activeTab: SidebarTab = 'groups';
   rooms: string[] = [];
@@ -64,7 +64,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     private cryptoService: CryptoService,
     private offlineService: OfflineSyncService,
     public rightsService: RightsService
-  ) {}
+  ) { }
 
   @HostListener('window:focus') onFocus() {
     this.isFocused = true;
@@ -145,9 +145,9 @@ export class ChatComponent implements OnInit, OnDestroy {
         // Render only for the active room, never echo own messages
         if (!isSelf && msg.room === this.activeRoom) {
           this.chatHistory.push({
-            id:     msg.id,
+            id: msg.id,
             sender: msg.sender,
-            text:   msg.content ?? '',
+            text: msg.content ?? '',
             isSelf: false,
             status: msg.status ?? 0
           });
@@ -172,11 +172,11 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   // ── Room navigation ──
   async openRoom(roomId: string, isDm: boolean, dmPeer?: string) {
-    this.activeRoom     = roomId;
-    this.isDmRoom       = isDm;
+    this.activeRoom = roomId;
+    this.isDmRoom = isDm;
     this.activeRoomLabel = isDm ? (dmPeer ?? roomId) : roomId;
-    this.chatHistory    = [];
-    this.whoIsTyping    = '';
+    this.chatHistory = [];
+    this.whoIsTyping = '';
 
     // Groups: join if not already joined
     if (!isDm && !this.joinedRooms.has(roomId)) {
@@ -211,11 +211,11 @@ export class ChatComponent implements OnInit, OnDestroy {
       for (const msg of (history as any[])) {
         let text = msg.content;
         if (msg.sender !== 'System') text = await this.decryptContent(text);
-        
+
         this.chatHistory.push({
-          id:     msg.id,
+          id: msg.id,
           sender: msg.sender,
-          text:   text,
+          text: text,
           isSelf: msg.sender === this.currentUser,
           status: msg.status
         });
@@ -262,10 +262,10 @@ export class ChatComponent implements OnInit, OnDestroy {
     if (!this.messageText.trim() || !this.activeRoom) return;
     const text = this.messageText;
     this.messageText = '';
-    
+
     // ── E2EE Encryption ──
     const encryptedText = await this.encryptContent(text);
-    
+
     const localMsg: ChatMessage = { sender: this.currentUser, text, isSelf: true, status: -1 };
     this.chatHistory.push(localMsg);
     this.scrollToBottom();
