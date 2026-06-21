@@ -186,10 +186,18 @@ export class ChatComponent implements OnInit, OnDestroy {
           target.status = data.status;
           // Attach timestamp fields if provided by server
           if (data.deliveredAt) target.deliveredAt = data.deliveredAt;
-          if (data.receivedAt)  target.receivedAt  = data.receivedAt;
-          if (data.readAt)      target.readAt      = data.readAt;
+          if (data.receivedAt) target.receivedAt = data.receivedAt;
+          if (data.readAt) target.readAt = data.readAt;
           // Also update IndexedDB cache
-          if (data.id) this.offlineService.updateMessageStatus(data.id, data.status);
+          if (data.id) {
+            this.offlineService.updateMessageStatus(
+              data.id,
+              data.status,
+              data.deliveredAt,
+              data.receivedAt,
+              data.readAt
+            );
+          }
         }
       }),
 
@@ -445,13 +453,15 @@ export class ChatComponent implements OnInit, OnDestroy {
         return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       }
       return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
-             ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } catch {
       return ts;
     }
   }
 
   logout() {
+    this.subscriptions.forEach(s => s.unsubscribe());
+    this.subscriptions = [];
     this.authService.logout();
     this.socketService.leaveAllRooms([...this.joinedRooms]);
     this.socketService.disconnect();
