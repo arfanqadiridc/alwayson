@@ -16,7 +16,20 @@ export interface ChatMessage {
   sender: string;
   text: string;
   isSelf: boolean;
-  status: number; // -1=pending, 0=sent(✓), 1=delivered(✓✓), 2=read(blue ✓✓)
+  /**
+   * Status codes (same as server):
+   *  -1 = pending  (queued offline, awaiting sync)
+   *   0 = sent     (server persisted – single grey ✓)
+   *   1 = delivered (server fanned out to room – double grey ✓✓)
+   *   2 = received  (recipient device received – double grey ✓✓)
+   *   3 = read      (recipient opened chat – blue ✓✓)
+   */
+  status: number;
+  // Lifecycle timestamps
+  createdAt?: string;
+  deliveredAt?: string;
+  receivedAt?: string;
+  readAt?: string;
 }
 
 type SidebarTab = 'groups' | 'dms';
@@ -47,6 +60,9 @@ export class ChatComponent implements OnInit, OnDestroy {
   isFocused = true;
   whoIsTyping = '';
   typingTimeout: any;
+
+  isOnline = true; // Reflects socket connection state
+  private syncInProgress = false;
 
   private myPrivateKey?: CryptoKey;
   private peerPublicKeys: Map<string, CryptoKey> = new Map();
@@ -82,23 +98,39 @@ export class ChatComponent implements OnInit, OnDestroy {
     await this.socketService.connect();
     this.socketService.registerUser(this.currentUser);
 
-    // ── 2a. E2EE Key Synchronization ──
+    // ── Wire socket connectivity into OfflineSyncService ──
+    this.subscriptions.push(
+      this.socketService.onConnect$.subscribe(async () => {
+        this.offlineService.setOnline();
+        this.isOnline = true;
+        await this.flushPendingSync();
+      }),
+      this.socketService.onDisconnect$.subscribe(() => {
+        this.offlineService.setOffline();
+        this.isOnline = false;
+      })
+    );
+
+    // Initial connectivity state from socket
+    this.isOnline = this.socketService.isConnected();
+    this.offlineService.isOnline$
+      .subscribe(online => { this.isOnline = online; });
+
+    // ── E2EE Key Synchronization ──
     await this.syncE2EEKeys();
 
-    // ── 3. Join ALL group rooms ──
+    // ── Join ALL group rooms ──
     for (const room of this.rooms) {
       this.socketService.joinRoom(room);
       this.joinedRooms.add(room);
     }
 
-    // ── 4. Load user list or employees if privileged ──
+    // ── Load user list ──
     try {
-      // Always fetch from employees directory for the full list
       const employees = await firstValueFrom(this.http.get<any[]>(`${this.API}/api/employees`));
       this.allUsers = employees.filter((e: any) => e.username !== this.currentUser);
     } catch (e) {
       console.warn('[AlwaysOn] Could not load employee list:', e);
-      // Fallback to database users if employees.json is unavailable
       try {
         const users = await firstValueFrom(this.http.get<string[]>(`${this.API}/api/users`));
         this.allUsers = users.filter((u: string) => u !== this.currentUser).map(u => ({ username: u, name: u }));
@@ -107,7 +139,7 @@ export class ChatComponent implements OnInit, OnDestroy {
       }
     }
 
-    // ── 4. Load dynamic rooms ──
+    // ── Load dynamic rooms ──
     try {
       this.rooms = await firstValueFrom(this.http.get<string[]>(`${this.API}/api/rooms`));
     } catch (e) {
@@ -115,49 +147,50 @@ export class ChatComponent implements OnInit, OnDestroy {
       this.rooms = ['general', 'engineering', 'support', 'random'];
     }
 
-    // ── 5. Open default room (Try offline first if necessary) ──
+    // ── Open default room ──
     await this.openRoom('general', false);
 
-    // ── 6. Wire up reactive listeners ──
+    // ── Wire up reactive listeners ──
     this.subscriptions.push(
       this.socketService.onNewMessage().subscribe(async (msg: any) => {
-        // ── E2EE Decryption ──
         if (msg.sender !== 'System' && msg.content) {
           msg.content = await this.decryptContent(msg.content);
         }
 
         const isSelf = msg.sender === this.currentUser;
 
-        // Persist to Offline DB
-        this.offlineService.saveMessage(msg);
+        // Persist to Offline DB (only if has server id)
+        if (msg.id) this.offlineService.saveMessage(msg);
 
         if (!isSelf && msg.sender !== 'System') {
           if (msg.room === this.activeRoom && this.isFocused) {
-            // User is actively looking at this room → mark Read
-            if (msg.id) this.socketService.sendStatusUpdate(msg.id, msg.room, 2);
+            // User is actively looking at this room → mark Read (status=3)
+            if (msg.id) this.socketService.sendStatusUpdate(msg.id, msg.room, 3);
           } else {
-            // User is elsewhere → Delivered + toast
-            if (msg.id) this.socketService.sendStatusUpdate(msg.id, msg.room, 1);
+            // User is elsewhere → mark Received on device (status=2)
+            if (msg.id) this.socketService.sendStatusUpdate(msg.id, msg.room, 2);
             this.showToast(msg.sender, msg.room, msg.content ?? '');
           }
         }
 
-        // Render only for the active room, never echo own messages
+        // Render only for the active room; never echo own messages from server
         if (!isSelf && msg.room === this.activeRoom) {
-          this.chatHistory.push({
-            id: msg.id,
-            sender: msg.sender,
-            text: msg.content ?? '',
-            isSelf: false,
-            status: msg.status ?? 0
-          });
+          this.chatHistory.push(this.mapServerMessage(msg, false));
           this.scrollToBottom();
         }
       }),
 
       this.socketService.onStatusUpdate().subscribe((data: any) => {
         const target = this.chatHistory.find(m => m.id === data.id);
-        if (target && data.status > target.status) target.status = data.status;
+        if (target && data.status > target.status) {
+          target.status = data.status;
+          // Attach timestamp fields if provided by server
+          if (data.deliveredAt) target.deliveredAt = data.deliveredAt;
+          if (data.receivedAt)  target.receivedAt  = data.receivedAt;
+          if (data.readAt)      target.readAt      = data.readAt;
+          // Also update IndexedDB cache
+          if (data.id) this.offlineService.updateMessageStatus(data.id, data.status);
+        }
       }),
 
       this.socketService.onTyping().subscribe((data: any) => {
@@ -170,6 +203,20 @@ export class ChatComponent implements OnInit, OnDestroy {
     );
   }
 
+  private mapServerMessage(msg: any, isSelf: boolean): ChatMessage {
+    return {
+      id: msg.id,
+      sender: msg.sender,
+      text: msg.content ?? '',
+      isSelf,
+      status: msg.status ?? 0,
+      createdAt: msg.createdAt,
+      deliveredAt: msg.deliveredAt,
+      receivedAt: msg.receivedAt,
+      readAt: msg.readAt
+    };
+  }
+
   // ── Room navigation ──
   async openRoom(roomId: string, isDm: boolean, dmPeer?: string) {
     this.activeRoom = roomId;
@@ -178,13 +225,12 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.chatHistory = [];
     this.whoIsTyping = '';
 
-    // Groups: join if not already joined
     if (!isDm && !this.joinedRooms.has(roomId)) {
       this.socketService.joinRoom(roomId);
       this.joinedRooms.add(roomId);
     }
 
-    // ── Load from Offline DB first ──
+    // Load from Offline DB first (instant render)
     const offlineHistory = await this.offlineService.getMessagesByRoom(roomId);
     if (offlineHistory.length > 0) {
       for (const msg of offlineHistory) {
@@ -193,9 +239,13 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.chatHistory.push({
           id: msg.id,
           sender: msg.sender,
-          text: text,
+          text,
           isSelf: msg.sender === this.currentUser,
-          status: msg.status
+          status: msg.status ?? 0,
+          createdAt: msg.createdAt,
+          deliveredAt: msg.deliveredAt,
+          receivedAt: msg.receivedAt,
+          readAt: msg.readAt
         });
       }
       this.scrollToBottom();
@@ -207,20 +257,13 @@ export class ChatComponent implements OnInit, OnDestroy {
 
     try {
       const history = await firstValueFrom(this.http.get<any[]>(url));
-      this.chatHistory = []; // Clear local cache to sync with server truth
-      for (const msg of (history as any[])) {
+      this.chatHistory = [];
+      for (const msg of history) {
         let text = msg.content;
         if (msg.sender !== 'System') text = await this.decryptContent(text);
-
-        this.chatHistory.push({
-          id: msg.id,
-          sender: msg.sender,
-          text: text,
-          isSelf: msg.sender === this.currentUser,
-          status: msg.status
-        });
-        // Update local DB
-        this.offlineService.saveMessage(msg);
+        const mapped = this.mapServerMessage({ ...msg, content: text }, msg.sender === this.currentUser);
+        this.chatHistory.push(mapped);
+        if (msg.id) this.offlineService.saveMessage(msg);
       }
       this.markVisibleAsRead();
       this.scrollToBottom();
@@ -238,9 +281,10 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   markVisibleAsRead() {
     for (const m of this.chatHistory) {
-      if (!m.isSelf && m.sender !== 'System' && m.status < 2 && m.id) {
-        m.status = 2;
-        this.socketService.sendStatusUpdate(m.id, this.activeRoom, 2);
+      if (!m.isSelf && m.sender !== 'System' && m.status < 3 && m.id) {
+        m.status = 3;
+        this.socketService.sendStatusUpdate(m.id, this.activeRoom, 3);
+        this.offlineService.updateMessageStatus(m.id, 3);
       }
     }
   }
@@ -263,10 +307,15 @@ export class ChatComponent implements OnInit, OnDestroy {
     const text = this.messageText;
     this.messageText = '';
 
-    // ── E2EE Encryption ──
     const encryptedText = await this.encryptContent(text);
 
-    const localMsg: ChatMessage = { sender: this.currentUser, text, isSelf: true, status: -1 };
+    const localMsg: ChatMessage = {
+      sender: this.currentUser,
+      text,
+      isSelf: true,
+      status: -1,
+      createdAt: new Date().toISOString().slice(0, 19).replace('T', ' ')
+    };
     this.chatHistory.push(localMsg);
     this.scrollToBottom();
 
@@ -274,23 +323,57 @@ export class ChatComponent implements OnInit, OnDestroy {
       const ack = await this.socketService.sendMessage(this.activeRoom, this.currentUser, encryptedText);
       if (ack?.id) {
         localMsg.id = ack.id;
-        localMsg.status = 0;
+        localMsg.status = ack.status ?? 0;
+        localMsg.createdAt = ack.createdAt ?? localMsg.createdAt;
+        // Persist to IndexedDB
+        this.offlineService.saveMessage({ ...ack, content: encryptedText });
       }
     } else {
       console.log('[Offline] Queueing message for sync…');
-      this.offlineService.addPendingSync({ room: this.activeRoom, sender: this.currentUser, content: encryptedText });
+      const localId = await this.offlineService.addPendingSync({
+        room: this.activeRoom,
+        sender: this.currentUser,
+        content: encryptedText
+      });
+      (localMsg as any)._localSyncId = localId;
     }
   }
 
+  /** Flush all queued offline messages once connection is restored */
+  private async flushPendingSync() {
+    if (this.syncInProgress) return;
+    this.syncInProgress = true;
+    try {
+      const pending = await this.offlineService.getPendingSync();
+      for (const item of pending) {
+        const ack = await this.socketService.sendMessage(item.room, item.sender, item.content);
+        if (ack?.id) {
+          await this.offlineService.removePendingSync(item.localId);
+          // Update the matching pending local message in chatHistory
+          const local = this.chatHistory.find(
+            m => (m as any)._localSyncId === item.localId && m.status === -1
+          );
+          if (local) {
+            local.id = ack.id;
+            local.status = ack.status ?? 0;
+            local.createdAt = ack.createdAt ?? local.createdAt;
+            this.offlineService.saveMessage({ ...ack, content: item.content });
+          }
+        }
+      }
+    } finally {
+      this.syncInProgress = false;
+    }
+  }
+
+  // ── E2EE ──
   private async syncE2EEKeys() {
     try {
       const keys: any = await firstValueFrom(this.http.get(`${this.API}/api/keys/download`));
       if (keys.publicKey && keys.encryptedPrivateKey) {
-        // Recovery from server (Use dummy password for POC - in real app, ask user)
         this.myPrivateKey = await this.cryptoService.decryptPrivateKey(keys.encryptedPrivateKey, 'password123');
         console.log('[E2EE] Private key recovered from server.');
       } else {
-        // Generate new keys
         const pair = await this.cryptoService.generateKeyPair();
         this.myPrivateKey = pair.privateKey;
         const pubStr = await this.cryptoService.exportKey(pair.publicKey);
@@ -317,12 +400,10 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   private async encryptContent(text: string): Promise<string> {
     if (this.isDmRoom) {
-      const peer = this.activeRoomLabel; // In DM, label is the peer username
+      const peer = this.activeRoomLabel;
       const pubKey = await this.getPeerPublicKey(peer);
       if (pubKey) return await this.cryptoService.encryptMessage(text, pubKey);
     }
-    // For groups, in this POC we just return as is (Group E2EE is more complex)
-    // or we could use a shared room key.
     return text;
   }
 
@@ -337,6 +418,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     return encrypted;
   }
 
+  // ── Helpers ──
   showToast(sender: string, room: string, text: string) {
     this.toasts.push({ sender, room, msg: text });
     setTimeout(() => this.toasts.shift(), 5000);
@@ -347,6 +429,26 @@ export class ChatComponent implements OnInit, OnDestroy {
       const el = document.querySelector('.chat-history');
       if (el) el.scrollTop = el.scrollHeight;
     }, 60);
+  }
+
+  /**
+   * Format a timestamp string for display in the tick tooltip.
+   * Converts "yyyy-MM-dd HH:mm:ss" → "HH:mm" (today) or "MMM d, HH:mm" (other days).
+   */
+  formatTickTime(ts: string | undefined): string {
+    if (!ts) return '';
+    try {
+      const d = new Date(ts.replace(' ', 'T') + 'Z'); // treat as UTC
+      const now = new Date();
+      const isToday = d.toDateString() === now.toDateString();
+      if (isToday) {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+             ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return ts;
+    }
   }
 
   logout() {

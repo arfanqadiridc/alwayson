@@ -1,4 +1,4 @@
-import { ApplicationConfig, provideZoneChangeDetection, isDevMode } from '@angular/core';
+import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
 import { routes } from './app.routes';
@@ -9,15 +9,18 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
-    // Enable class-based interceptors (our JwtInterceptor)
     provideHttpClient(withInterceptorsFromDi()),
     {
       provide: HTTP_INTERCEPTORS,
       useClass: JwtInterceptor,
       multi: true
-    }, provideServiceWorker('ngsw-worker.js', {
-            enabled: !isDevMode(),
-            registrationStrategy: 'registerWhenStable:30000'
-          })
+    },
+    // Service worker: always enabled (both dev and prod builds).
+    // This caches the app shell so it works even when the server is restarted.
+    // NOTE: Requires a production build + static server (see start-ui.bat).
+    provideServiceWorker('ngsw-worker.js', {
+      enabled: true,
+      registrationStrategy: 'registerWhenStable:30000'
+    })
   ]
 };

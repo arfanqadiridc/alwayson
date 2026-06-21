@@ -11,6 +11,13 @@ import jakarta.annotation.PreDestroy;
 /**
  * Handles real-time websocket connections perfectly bypassing HTTP bottlenecks.
  * Demonstrates Netty Socket.IO Rooms capability natively.
+ *
+ * Message Status Lifecycle:
+ *  -1 = pending  (queued offline, not yet sent)
+ *   0 = sent     (server persisted – single grey ✓)
+ *   1 = delivered (server fanned out to recipient room – double grey ✓✓)
+ *   2 = received  (recipient device received it – double grey ✓✓ with received time)
+ *   3 = read      (recipient opened the conversation – blue ✓✓)
  */
 @Component
 public class SocketEventHandler {
@@ -99,37 +106,52 @@ public class SocketEventHandler {
         server.addEventListener("room_message", RoomMessage.class, (client, data, ackSender) -> {
             String sender = data.sender != null ? data.sender : client.get("username");
             if (sender == null) sender = "Unknown";
-            
+
             System.out.println("Message from " + sender + " for room '" + data.room + "': " + data.message);
 
             Message newMsg = new Message(data.room, sender, data.message);
             Long id = messageRepository.save(newMsg);
             newMsg.setId(id);
 
-            // ACK back to sender with database ID (sets Single Tick ✓)
+            // ACK back to sender with database ID + createdAt (sets status=0, single grey ✓)
             if (ackSender.isAckRequested()) {
                 ackSender.sendAckData(newMsg);
             }
 
             if (data.room.startsWith("dm_")) {
-                // DM: broadcast only to both participants' personal notification rooms.
-                // This way recipient gets the message even if they haven't opened the DM thread.
-                // Room format: dm_{userA}_{userB} (always alphabetically sorted)
+                // DM: fan out to both participants' personal notification rooms.
                 String key = data.room.substring(3); // strip "dm_"
                 int sep = key.indexOf('_');
                 if (sep > 0) {
                     String userA = key.substring(0, sep);
                     String userB = key.substring(sep + 1);
+
+                    // Status 1 = delivered (server fanned out) — set immediately
+                    messageRepository.updateStatus(id, 1);
+                    newMsg.setStatus(1);
+
                     server.getRoomOperations("pnr_" + userA).sendEvent("chat_message", newMsg);
                     server.getRoomOperations("pnr_" + userB).sendEvent("chat_message", newMsg);
+
+                    // Broadcast the delivered status update to both participants
+                    MessageStatusUpdate deliveredUpdate = new MessageStatusUpdate();
+                    deliveredUpdate.id = id;
+                    deliveredUpdate.room = data.room;
+                    deliveredUpdate.status = 1;
+                    server.getRoomOperations("pnr_" + userA).sendEvent("status_update", deliveredUpdate);
+                    server.getRoomOperations("pnr_" + userB).sendEvent("status_update", deliveredUpdate);
                 }
             } else {
                 // Group room: broadcast to all sockets in that room
+                // Status 1 = delivered for group messages
+                messageRepository.updateStatus(id, 1);
+                newMsg.setStatus(1);
                 server.getRoomOperations(data.room).sendEvent("chat_message", newMsg);
             }
         });
 
         // 4. Update Status Lifecycle
+        // Client sends: status=2 (device received), status=3 (read)
         server.addEventListener("message_status", MessageStatusUpdate.class, (client, data, ackSender) -> {
             messageRepository.updateStatus(data.id, data.status);
             // Broadcast status update to the right audience

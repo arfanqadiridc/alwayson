@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { io, Socket } from 'socket.io-client';
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 
 @Injectable({
   providedIn: 'root'
@@ -8,26 +8,40 @@ import { Observable } from 'rxjs';
 export class SocketService {
   private socket!: Socket;
 
+  private _connected$ = new Subject<void>();
+  private _disconnected$ = new Subject<string>();
+
+  /** Emits whenever the socket successfully connects (or reconnects) */
+  get onConnect$(): Observable<void> { return this._connected$.asObservable(); }
+
+  /** Emits the disconnect reason whenever the socket disconnects */
+  get onDisconnect$(): Observable<string> { return this._disconnected$.asObservable(); }
+
   connect(): Promise<void> {
     return new Promise((resolve) => {
-      // Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues on some Windows setups
       this.socket = io('http://127.0.0.1:8085', {
         transports: ['websocket'],
         reconnection: true,
         reconnectionDelay: 2000,
-        reconnectionAttempts: 10,
+        reconnectionAttempts: Infinity,
         timeout: 10000
       });
 
       this.socket.on('connect', () => {
         console.log('[AlwaysOn] Socket connected ✓', this.socket.id);
+        this._connected$.next();
         resolve();
+      });
+
+      this.socket.on('disconnect', (reason: string) => {
+        console.warn('[AlwaysOn] Socket disconnected:', reason);
+        this._disconnected$.next(reason);
       });
 
       this.socket.on('connect_error', (err) => {
         console.error('[AlwaysOn] Socket connection failed:', err.message);
-        // We still resolve so the UI can finish loading, but features will be degraded
-        resolve();
+        this._disconnected$.next(err.message);
+        resolve(); // Still resolve so UI can finish loading in degraded mode
       });
 
       // Safety timeout
@@ -53,7 +67,6 @@ export class SocketService {
   sendMessage(room: string, sender: string, message: string): Promise<any> {
     return new Promise((resolve) => {
       if (this.socket?.connected) {
-        // Send structured JSON instead of a formatted string
         this.socket.emit('room_message', { room, sender, message }, (response: any) => resolve(response));
       } else {
         console.warn('[AlwaysOn] Socket disconnected. Message not sent.');
